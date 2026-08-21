@@ -31,22 +31,23 @@ object WatchTimerEngine {
     private const val REQUEST_CODE_ALARM = 2001
 
     private val _snapshot = MutableStateFlow(
-        TimerSnapshot(runState = TimerRunState.IDLE, config = TimerConfig.DEFAULT, nextTriggerElapsedRealtime = null)
+        TimerSnapshot(runState = TimerRunState.IDLE, config = TimerConfig.DEFAULT, config2 = TimerConfig.DEFAULT2, nextTriggerElapsedRealtime = null)
     )
     val snapshot: StateFlow<TimerSnapshot> = _snapshot.asStateFlow()
 
     fun currentState(): TimerRunState = _snapshot.value.runState
 
-    fun start(context: Context, config: TimerConfig) {
+    fun start(context: Context, config: TimerConfig, config2: TimerConfig = _snapshot.value.config2) {
         val current = _snapshot.value
         check(TimerStateMachine.isValidTransition(current.runState, TimerRunState.RUNNING)) {
             "Invalid transition ${current.runState} -> RUNNING"
         }
         require(config.isValid())
+        require(config2.isValid())
 
         val intervalToUse = current.remainingMillisAtPause?.takeIf { current.runState == TimerRunState.PAUSED }
-            ?: config.intervalMillis
-        scheduleNext(context, config, intervalToUse)
+            ?: current.activeConfig.intervalMillis
+        scheduleNext(context, config, config2, current.nextTimerIndex, intervalToUse)
     }
 
     fun pause(context: Context) {
@@ -74,7 +75,9 @@ object WatchTimerEngine {
     fun onSignalFired(context: Context) {
         val current = _snapshot.value
         if (current.runState != TimerRunState.RUNNING) return
-        scheduleNext(context, current.config, current.config.intervalMillis)
+        val nextIndex = 1 - current.nextTimerIndex
+        val nextConfig = if (nextIndex == 0) current.config else current.config2
+        scheduleNext(context, current.config, current.config2, nextIndex, nextConfig.intervalMillis)
     }
 
     fun remainingMillisNow(): Long? {
@@ -82,7 +85,7 @@ object WatchTimerEngine {
         return (next - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
     }
 
-    private fun scheduleNext(context: Context, config: TimerConfig, intervalMillis: Long) {
+    private fun scheduleNext(context: Context, config: TimerConfig, config2: TimerConfig, nextTimerIndex: Int, intervalMillis: Long) {
         val triggerAt = SystemClock.elapsedRealtime() + intervalMillis
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, alarmPendingIntent(context))
@@ -90,6 +93,8 @@ object WatchTimerEngine {
         _snapshot.value = _snapshot.value.copy(
             runState = TimerRunState.RUNNING,
             config = config,
+            config2 = config2,
+            nextTimerIndex = nextTimerIndex,
             nextTriggerElapsedRealtime = triggerAt,
             remainingMillisAtPause = null
         )

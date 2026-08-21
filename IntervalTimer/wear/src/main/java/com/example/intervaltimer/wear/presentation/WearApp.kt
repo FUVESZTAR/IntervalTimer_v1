@@ -41,17 +41,35 @@ fun WearApp(viewModel: WatchViewModel) {
         ) {
             item { StatusText(uiState.runState) }
             item {
+                val timerLabel = if (uiState.nextTimerIndex == 0) "T1" else "T2"
                 Text(
-                    text = uiState.remainingMillis?.let { formatMillis(it) } ?: formatMillis(uiState.config.intervalMillis),
+                    text = "$timerLabel  ${uiState.remainingMillis?.let { formatMillis(it) } ?: formatMillis(uiState.config.intervalMillis)}",
                     style = MaterialTheme.typography.display2
                 )
             }
             item { Spacer(Modifier.height(4.dp)) }
 
             if (uiState.runState != TimerRunState.RUNNING) {
+                item {
+                    Text("Timer 1", style = MaterialTheme.typography.caption1, fontWeight = FontWeight.Bold)
+                }
                 items(presets) { (label, millis) ->
                     Chip(
                         onClick = { viewModel.updateInterval(millis) },
+                        label = { Text(label) },
+                        colors = ChipDefaults.secondaryChipColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                item {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Timer 2", style = MaterialTheme.typography.caption1, fontWeight = FontWeight.Bold)
+                    }
+                }
+                items(presets) { (label, millis) ->
+                    Chip(
+                        onClick = { viewModel.updateInterval2(millis) },
                         label = { Text(label) },
                         colors = ChipDefaults.secondaryChipColors(),
                         modifier = Modifier.fillMaxWidth()

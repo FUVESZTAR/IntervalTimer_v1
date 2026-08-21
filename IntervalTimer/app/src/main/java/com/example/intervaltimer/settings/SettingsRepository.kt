@@ -29,7 +29,8 @@ class SettingsRepository(private val context: Context) {
     data class PersistedTimerRuntime(
         val runState: TimerRunState,
         val nextTriggerWallClockMillis: Long?,
-        val pausedRemainingMillis: Long?
+        val pausedRemainingMillis: Long?,
+        val nextTimerIndex: Int = 0
     )
 
     private object Keys {
@@ -44,6 +45,12 @@ class SettingsRepository(private val context: Context) {
         val TIMER_RUN_STATE = stringPreferencesKey("timer_run_state")
         val NEXT_TRIGGER_WALL_CLOCK = longPreferencesKey("next_trigger_wall_clock")
         val PAUSED_REMAINING_MILLIS = longPreferencesKey("paused_remaining_millis")
+        val NEXT_TIMER_INDEX = intPreferencesKey("next_timer_index")
+        // Timer 2 config keys
+        val INTERVAL_MILLIS_2 = longPreferencesKey("interval_millis_2")
+        val SIGNAL_TYPE_2 = intPreferencesKey("signal_type_2")
+        val SOUND_PATTERN_2 = intPreferencesKey("sound_pattern_2")
+        val VIBRATION_PATTERN_2 = intPreferencesKey("vibration_pattern_2")
     }
 
     val configFlow: Flow<TimerConfig> = context.dataStore.data.map { prefs ->
@@ -52,6 +59,17 @@ class SettingsRepository(private val context: Context) {
             signalType = SignalType.fromOrdinalSafe(prefs[Keys.SIGNAL_TYPE] ?: TimerConfig.DEFAULT.signalType.ordinal),
             soundPattern = SoundPattern.fromOrdinalSafe(prefs[Keys.SOUND_PATTERN] ?: TimerConfig.DEFAULT.soundPattern.ordinal),
             vibrationPattern = VibrationPattern.fromOrdinalSafe(prefs[Keys.VIBRATION_PATTERN] ?: TimerConfig.DEFAULT.vibrationPattern.ordinal),
+            watchEnabled = prefs[Keys.WATCH_ENABLED] ?: true,
+            phoneEnabled = prefs[Keys.PHONE_ENABLED] ?: true
+        )
+    }
+
+    val config2Flow: Flow<TimerConfig> = context.dataStore.data.map { prefs ->
+        TimerConfig(
+            intervalMillis = prefs[Keys.INTERVAL_MILLIS_2] ?: TimerConfig.DEFAULT2.intervalMillis,
+            signalType = SignalType.fromOrdinalSafe(prefs[Keys.SIGNAL_TYPE_2] ?: TimerConfig.DEFAULT2.signalType.ordinal),
+            soundPattern = SoundPattern.fromOrdinalSafe(prefs[Keys.SOUND_PATTERN_2] ?: TimerConfig.DEFAULT2.soundPattern.ordinal),
+            vibrationPattern = VibrationPattern.fromOrdinalSafe(prefs[Keys.VIBRATION_PATTERN_2] ?: TimerConfig.DEFAULT2.vibrationPattern.ordinal),
             watchEnabled = prefs[Keys.WATCH_ENABLED] ?: true,
             phoneEnabled = prefs[Keys.PHONE_ENABLED] ?: true
         )
@@ -74,6 +92,15 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun saveConfig2(config2: TimerConfig) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.INTERVAL_MILLIS_2] = config2.intervalMillis
+            prefs[Keys.SIGNAL_TYPE_2] = config2.signalType.ordinal
+            prefs[Keys.SOUND_PATTERN_2] = config2.soundPattern.ordinal
+            prefs[Keys.VIBRATION_PATTERN_2] = config2.vibrationPattern.ordinal
+        }
+    }
+
     suspend fun setAutoRestoreOnBoot(enabled: Boolean) {
         context.dataStore.edit { it[Keys.AUTO_RESTORE_ON_BOOT] = enabled }
     }
@@ -88,6 +115,7 @@ class SettingsRepository(private val context: Context) {
 
         context.dataStore.edit { prefs ->
             prefs[Keys.TIMER_RUN_STATE] = snapshot.runState.name
+            prefs[Keys.NEXT_TIMER_INDEX] = snapshot.nextTimerIndex
             when (snapshot.runState) {
                 TimerRunState.RUNNING -> {
                     val nextTriggerWallClockMillis = snapshot.nextTriggerElapsedRealtime?.let { nextElapsed ->
@@ -120,7 +148,8 @@ class SettingsRepository(private val context: Context) {
                     TimerRunState.valueOf(prefs[Keys.TIMER_RUN_STATE] ?: TimerRunState.IDLE.name)
                 }.getOrDefault(TimerRunState.IDLE),
                 nextTriggerWallClockMillis = prefs[Keys.NEXT_TRIGGER_WALL_CLOCK],
-                pausedRemainingMillis = prefs[Keys.PAUSED_REMAINING_MILLIS]
+                pausedRemainingMillis = prefs[Keys.PAUSED_REMAINING_MILLIS],
+                nextTimerIndex = prefs[Keys.NEXT_TIMER_INDEX] ?: 0
             )
         }.first()
 }

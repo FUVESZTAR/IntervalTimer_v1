@@ -15,6 +15,8 @@ import kotlinx.coroutines.launch
 
 data class WatchUiState(
     val config: TimerConfig = TimerConfig.DEFAULT,
+    val config2: TimerConfig = TimerConfig.DEFAULT2,
+    val nextTimerIndex: Int = 0,
     val runState: TimerRunState = TimerRunState.IDLE,
     val remainingMillis: Long? = null
 )
@@ -42,8 +44,20 @@ class WatchViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            repository.config2Flow.collect { config2 ->
+                if (WatchTimerEngine.currentState() != TimerRunState.RUNNING) {
+                    _uiState.value = _uiState.value.copy(config2 = config2)
+                }
+            }
+        }
+        viewModelScope.launch {
             WatchTimerEngine.snapshot.collect { snapshot ->
-                _uiState.value = _uiState.value.copy(runState = snapshot.runState, config = snapshot.config)
+                _uiState.value = _uiState.value.copy(
+                    runState = snapshot.runState,
+                    config = snapshot.config,
+                    config2 = snapshot.config2,
+                    nextTimerIndex = snapshot.nextTimerIndex
+                )
             }
         }
         viewModelScope.launch {
@@ -56,8 +70,11 @@ class WatchViewModel(application: Application) : AndroidViewModel(application) {
 
     fun start() {
         val app = getApplication<Application>()
-        WatchTimerEngine.start(app, _uiState.value.config)
-        viewModelScope.launch { repository.saveConfig(_uiState.value.config) }
+        WatchTimerEngine.start(app, _uiState.value.config, _uiState.value.config2)
+        viewModelScope.launch {
+            repository.saveConfig(_uiState.value.config)
+            repository.saveConfig2(_uiState.value.config2)
+        }
     }
 
     fun pause() = WatchTimerEngine.pause(getApplication())
@@ -69,6 +86,13 @@ class WatchViewModel(application: Application) : AndroidViewModel(application) {
         val newConfig = _uiState.value.config.copy(intervalMillis = TimerConfig.coerceInterval(millis))
         _uiState.value = _uiState.value.copy(config = newConfig)
         viewModelScope.launch { repository.saveConfig(newConfig) }
+    }
+
+    fun updateInterval2(millis: Long) {
+        if (_uiState.value.runState == TimerRunState.RUNNING) return
+        val newConfig2 = _uiState.value.config2.copy(intervalMillis = TimerConfig.coerceInterval(millis))
+        _uiState.value = _uiState.value.copy(config2 = newConfig2)
+        viewModelScope.launch { repository.saveConfig2(newConfig2) }
     }
 
     fun testSignal() {

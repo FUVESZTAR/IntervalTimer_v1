@@ -46,7 +46,8 @@ object NotificationHelper {
         }
 
         val contentText = if (remaining != null) {
-            "Hátralévő idő: ${formatDuration(remaining)}"
+            val timerLabel = if (snapshot.nextTimerIndex == 0) "Timer 1" else "Timer 2"
+            "Következő: $timerLabel – ${formatDuration(remaining)}"
         } else {
             "Nincs ütemezett jelzés"
         }

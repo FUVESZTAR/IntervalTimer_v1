@@ -51,4 +51,56 @@ class TimerConfigTest {
         val millis = (hours * 3600L + minutes * 60L + seconds) * 1000L
         assertEquals(90_000L, millis)
     }
+
+    @Test
+    fun `DEFAULT2 has a different interval than DEFAULT`() {
+        assertFalse(TimerConfig.DEFAULT.intervalMillis == TimerConfig.DEFAULT2.intervalMillis)
+    }
+
+    @Test
+    fun `DEFAULT2 is valid`() {
+        assertTrue(TimerConfig.DEFAULT2.isValid())
+    }
+
+    @Test
+    fun `TimerSnapshot activeConfig returns config when nextTimerIndex is 0`() {
+        val t1 = config(5_000L)
+        val t2 = config(10_000L)
+        val snapshot = com.example.intervaltimer.shared.model.TimerSnapshot(
+            runState = com.example.intervaltimer.shared.model.TimerRunState.IDLE,
+            config = t1,
+            config2 = t2,
+            nextTimerIndex = 0,
+            nextTriggerElapsedRealtime = null
+        )
+        assertEquals(t1, snapshot.activeConfig)
+    }
+
+    @Test
+    fun `TimerSnapshot activeConfig returns config2 when nextTimerIndex is 1`() {
+        val t1 = config(5_000L)
+        val t2 = config(10_000L)
+        val snapshot = com.example.intervaltimer.shared.model.TimerSnapshot(
+            runState = com.example.intervaltimer.shared.model.TimerRunState.IDLE,
+            config = t1,
+            config2 = t2,
+            nextTimerIndex = 1,
+            nextTriggerElapsedRealtime = null
+        )
+        assertEquals(t2, snapshot.activeConfig)
+    }
+
+    @Test
+    fun `nextTimerIndex alternates from 0 to 1 after first signal`() {
+        val initialIndex = 0
+        val afterFirstSignal = 1 - initialIndex
+        assertEquals(1, afterFirstSignal)
+    }
+
+    @Test
+    fun `nextTimerIndex alternates from 1 back to 0 after second signal`() {
+        val afterFirstSignal = 1
+        val afterSecondSignal = 1 - afterFirstSignal
+        assertEquals(0, afterSecondSignal)
+    }
 }

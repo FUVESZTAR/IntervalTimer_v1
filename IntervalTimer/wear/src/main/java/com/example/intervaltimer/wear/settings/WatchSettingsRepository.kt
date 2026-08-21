@@ -25,6 +25,9 @@ class WatchSettingsRepository(private val context: Context) {
         val INTERVAL_MILLIS = longPreferencesKey("interval_millis")
         val SIGNAL_TYPE = intPreferencesKey("signal_type")
         val VIBRATION_PATTERN = intPreferencesKey("vibration_pattern")
+        val INTERVAL_MILLIS_2 = longPreferencesKey("interval_millis_2")
+        val SIGNAL_TYPE_2 = intPreferencesKey("signal_type_2")
+        val VIBRATION_PATTERN_2 = intPreferencesKey("vibration_pattern_2")
     }
 
     val configFlow: Flow<TimerConfig> = context.watchDataStore.data.map { prefs ->
@@ -36,11 +39,28 @@ class WatchSettingsRepository(private val context: Context) {
         )
     }
 
+    val config2Flow: Flow<TimerConfig> = context.watchDataStore.data.map { prefs ->
+        TimerConfig(
+            intervalMillis = prefs[Keys.INTERVAL_MILLIS_2] ?: TimerConfig.DEFAULT2.intervalMillis,
+            signalType = SignalType.fromOrdinalSafe(prefs[Keys.SIGNAL_TYPE_2] ?: SignalType.VIBRATION_ONLY.ordinal),
+            soundPattern = SoundPattern.SHORT_BEEP,
+            vibrationPattern = VibrationPattern.fromOrdinalSafe(prefs[Keys.VIBRATION_PATTERN_2] ?: TimerConfig.DEFAULT2.vibrationPattern.ordinal)
+        )
+    }
+
     suspend fun saveConfig(config: TimerConfig) {
         context.watchDataStore.edit { prefs ->
             prefs[Keys.INTERVAL_MILLIS] = config.intervalMillis
             prefs[Keys.SIGNAL_TYPE] = config.signalType.ordinal
             prefs[Keys.VIBRATION_PATTERN] = config.vibrationPattern.ordinal
+        }
+    }
+
+    suspend fun saveConfig2(config2: TimerConfig) {
+        context.watchDataStore.edit { prefs ->
+            prefs[Keys.INTERVAL_MILLIS_2] = config2.intervalMillis
+            prefs[Keys.SIGNAL_TYPE_2] = config2.signalType.ordinal
+            prefs[Keys.VIBRATION_PATTERN_2] = config2.vibrationPattern.ordinal
         }
     }
 }

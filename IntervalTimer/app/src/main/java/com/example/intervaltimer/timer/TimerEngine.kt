@@ -50,25 +50,27 @@ object TimerEngine {
     @Volatile private var settingsRepository: SettingsRepository? = null
 
     private val _snapshot = MutableStateFlow(
-        TimerSnapshot(runState = TimerRunState.IDLE, config = TimerConfig.DEFAULT, nextTriggerElapsedRealtime = null)
+        TimerSnapshot(runState = TimerRunState.IDLE, config = TimerConfig.DEFAULT, config2 = TimerConfig.DEFAULT2, nextTriggerElapsedRealtime = null)
     )
     val snapshot: StateFlow<TimerSnapshot> = _snapshot.asStateFlow()
 
     fun currentState(): TimerRunState = _snapshot.value.runState
 
     /** IDLE|STOPPED -> RUNNING, or resume from PAUSED. */
-    fun start(context: Context, config: TimerConfig) {
+    fun start(context: Context, config: TimerConfig, config2: TimerConfig? = null) {
         val current = _snapshot.value
         check(TimerStateMachine.isValidTransition(current.runState, TimerRunState.RUNNING)) {
             "Invalid transition ${current.runState} -> RUNNING"
         }
         require(config.isValid()) { "Invalid interval: ${config.intervalMillis}" }
+        val effective2 = config2 ?: current.config2
+        require(effective2.isValid()) { "Invalid interval for timer 2: ${effective2.intervalMillis}" }
 
         val intervalToUse = current.remainingMillisAtPause?.takeIf { current.runState == TimerRunState.PAUSED }
-            ?: config.intervalMillis
+            ?: current.activeConfig.intervalMillis
 
-        scheduleNext(context, config, intervalToUse)
-        log("Timer started. interval=${config.intervalMillis}ms")
+        scheduleNext(context, config, effective2, current.nextTimerIndex, intervalToUse)
+        log("Timer started. interval=${config.intervalMillis}ms interval2=${effective2.intervalMillis}ms")
     }
 
     /** Rebuilds the in-memory state after process death, without scheduling a duplicate alarm. */
@@ -78,7 +80,9 @@ object TimerEngine {
 
             val repository = repository(context)
             val config = repository.configFlow.first()
+            val config2 = repository.config2Flow.first()
             val persisted = repository.readPersistedTimerRuntime()
+            val nextTimerIndex = persisted.nextTimerIndex
             when (persisted.runState) {
                 TimerRunState.RUNNING -> {
                     val nextTriggerWallClockMillis = persisted.nextTriggerWallClockMillis
@@ -86,12 +90,16 @@ object TimerEngine {
                         _snapshot.value = TimerSnapshot(
                             runState = TimerRunState.STOPPED,
                             config = config,
+                            config2 = config2,
+                            nextTimerIndex = nextTimerIndex,
                             nextTriggerElapsedRealtime = null
                         )
                     } else {
                         _snapshot.value = TimerSnapshot(
                             runState = TimerRunState.RUNNING,
                             config = config,
+                            config2 = config2,
+                            nextTimerIndex = nextTimerIndex,
                             nextTriggerElapsedRealtime = SystemClock.elapsedRealtime() +
                                 TimerRestoreCalculator.remainingForHydration(
                                     nowWallClockMillis = System.currentTimeMillis(),
@@ -104,6 +112,8 @@ object TimerEngine {
                     _snapshot.value = TimerSnapshot(
                         runState = TimerRunState.PAUSED,
                         config = config,
+                        config2 = config2,
+                        nextTimerIndex = nextTimerIndex,
                         nextTriggerElapsedRealtime = null,
                         remainingMillisAtPause = persisted.pausedRemainingMillis ?: config.intervalMillis
                     )
@@ -112,6 +122,8 @@ object TimerEngine {
                     _snapshot.value = TimerSnapshot(
                         runState = TimerRunState.STOPPED,
                         config = config,
+                        config2 = config2,
+                        nextTimerIndex = nextTimerIndex,
                         nextTriggerElapsedRealtime = null
                     )
                 }
@@ -119,6 +131,8 @@ object TimerEngine {
                     _snapshot.value = TimerSnapshot(
                         runState = TimerRunState.IDLE,
                         config = config,
+                        config2 = config2,
+                        nextTimerIndex = nextTimerIndex,
                         nextTriggerElapsedRealtime = null
                     )
                 }
@@ -126,14 +140,15 @@ object TimerEngine {
         }
     }
 
-    fun restoreAfterBoot(context: Context, config: TimerConfig, nextTriggerWallClockMillis: Long?) {
+    fun restoreAfterBoot(context: Context, config: TimerConfig, config2: TimerConfig, nextTimerIndex: Int, nextTriggerWallClockMillis: Long?) {
+        val activeConfig = if (nextTimerIndex == 0) config else config2
         val remainingMillis = TimerRestoreCalculator.remainingForReschedule(
             nowWallClockMillis = System.currentTimeMillis(),
             nextTriggerWallClockMillis = nextTriggerWallClockMillis,
-            fallbackIntervalMillis = config.intervalMillis
+            fallbackIntervalMillis = activeConfig.intervalMillis
         )
-        scheduleNext(context, config, remainingMillis)
-        log("Timer restored after boot. remaining=${remainingMillis}ms")
+        scheduleNext(context, config, config2, nextTimerIndex, remainingMillis)
+        log("Timer restored after boot. remaining=${remainingMillis}ms nextTimerIndex=$nextTimerIndex")
     }
 
     /** RUNNING -> PAUSED. Cancels the pending alarm and remembers remaining time. */
@@ -175,16 +190,19 @@ object TimerEngine {
             log("Signal fired but state=${current.runState}; ignoring stray alarm")
             return
         }
-        scheduleNext(context, current.config, current.config.intervalMillis)
+        // Flip to the OTHER timer for the next interval.
+        val nextIndex = 1 - current.nextTimerIndex
+        val nextConfig = if (nextIndex == 0) current.config else current.config2
+        scheduleNext(context, current.config, current.config2, nextIndex, nextConfig.intervalMillis)
     }
 
-    fun updateConfigWhileIdle(config: TimerConfig) {
+    fun updateConfigWhileIdle(config: TimerConfig, config2: TimerConfig? = null) {
         val current = _snapshot.value
         if (current.runState == TimerRunState.RUNNING) return // don't mutate mid-flight; UI should block this
-        _snapshot.value = current.copy(config = config)
+        _snapshot.value = current.copy(config = config, config2 = config2 ?: current.config2)
     }
 
-    private fun scheduleNext(context: Context, config: TimerConfig, intervalMillis: Long) {
+    private fun scheduleNext(context: Context, config: TimerConfig, config2: TimerConfig, nextTimerIndex: Int, intervalMillis: Long) {
         val triggerAt = SystemClock.elapsedRealtime() + intervalMillis
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pendingIntent = alarmPendingIntent(context)
@@ -197,6 +215,8 @@ object TimerEngine {
         _snapshot.value = _snapshot.value.copy(
             runState = TimerRunState.RUNNING,
             config = config,
+            config2 = config2,
+            nextTimerIndex = nextTimerIndex,
             nextTriggerElapsedRealtime = triggerAt,
             remainingMillisAtPause = null
         )

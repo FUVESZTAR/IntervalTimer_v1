@@ -21,6 +21,8 @@ import kotlinx.coroutines.launch
 
 data class TimerUiState(
     val config: TimerConfig = TimerConfig.DEFAULT,
+    val config2: TimerConfig = TimerConfig.DEFAULT2,
+    val nextTimerIndex: Int = 0,
     val runState: TimerRunState = TimerRunState.IDLE,
     val remainingMillis: Long? = null
 )
@@ -35,6 +37,8 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     ) { snapshot, _ ->
         TimerUiState(
             config = snapshot.config,
+            config2 = snapshot.config2,
+            nextTimerIndex = snapshot.nextTimerIndex,
             runState = snapshot.runState,
             remainingMillis = TimerEngine.remainingMillisNow()
         )
@@ -50,9 +54,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         }
         // Load persisted config once on start.
         viewModelScope.launch {
-            val savedConfig = settingsRepository.configFlow
-            savedConfig.collect { config ->
+            settingsRepository.configFlow.collect { config ->
                 TimerEngine.updateConfigWhileIdle(config)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.config2Flow.collect { config2 ->
+                TimerEngine.updateConfigWhileIdle(TimerEngine.snapshot.value.config, config2)
             }
         }
         // UI-only countdown refresh (1x/sec) purely for the on-screen "mm:ss" label.
@@ -68,7 +76,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun start() {
         val app = getApplication<Application>()
-        TimerEngine.start(app, uiState.value.config)
+        TimerEngine.start(app, uiState.value.config, uiState.value.config2)
         ContextCompat.startForegroundService(app, Intent(app, TimerForegroundService::class.java))
         NotificationHelper.updateOngoingNotification(app)
         WatchCommunicationManager.sendStateSync(app)
@@ -93,6 +101,12 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         if (uiState.value.runState == TimerRunState.RUNNING) return // must pause/stop first
         TimerEngine.updateConfigWhileIdle(newConfig)
         viewModelScope.launch { settingsRepository.saveConfig(newConfig) }
+    }
+
+    fun updateConfig2(newConfig2: TimerConfig) {
+        if (uiState.value.runState == TimerRunState.RUNNING) return
+        TimerEngine.updateConfigWhileIdle(TimerEngine.snapshot.value.config, newConfig2)
+        viewModelScope.launch { settingsRepository.saveConfig2(newConfig2) }
     }
 
     fun testSignal() {
