@@ -61,41 +61,23 @@ fun MainScreen(
 
             StatusBadge(uiState.runState)
 
-            NextSignalDisplay(remainingMillis = uiState.remainingMillis, runState = uiState.runState)
+            NextSignalDisplay(remainingMillis = uiState.remainingMillis, runState = uiState.runState, nextTimerIndex = uiState.nextTimerIndex)
 
-            IntervalPicker(
-                intervalMillis = uiState.config.intervalMillis,
-                enabled = isEditable,
-                onIntervalChange = { newMillis ->
-                    viewModel.updateConfig(uiState.config.copy(intervalMillis = TimerConfig.coerceInterval(newMillis)))
-                }
+            // ─── Timer 1 ───────────────────────────────────────────────────────
+            TimerSection(
+                label = "Timer 1",
+                config = uiState.config,
+                isEditable = isEditable,
+                onConfigChange = { viewModel.updateConfig(it) }
             )
 
-            PresetRow(enabled = isEditable) { presetMillis ->
-                viewModel.updateConfig(uiState.config.copy(intervalMillis = presetMillis))
-            }
-
-            SignalTypeSelector(
-                selected = uiState.config.signalType,
-                enabled = isEditable,
-                onSelect = { viewModel.updateConfig(uiState.config.copy(signalType = it)) }
+            // ─── Timer 2 ───────────────────────────────────────────────────────
+            TimerSection(
+                label = "Timer 2",
+                config = uiState.config2,
+                isEditable = isEditable,
+                onConfigChange = { viewModel.updateConfig2(it) }
             )
-
-            if (uiState.config.signalType == SignalType.SOUND_ONLY || uiState.config.signalType == SignalType.SOUND_AND_VIBRATION) {
-                SoundPatternSelector(
-                    selected = uiState.config.soundPattern,
-                    enabled = isEditable,
-                    onSelect = { viewModel.updateConfig(uiState.config.copy(soundPattern = it)) }
-                )
-            }
-
-            if (uiState.config.signalType == SignalType.VIBRATION_ONLY || uiState.config.signalType == SignalType.SOUND_AND_VIBRATION) {
-                VibrationPatternSelector(
-                    selected = uiState.config.vibrationPattern,
-                    enabled = isEditable,
-                    onSelect = { viewModel.updateConfig(uiState.config.copy(vibrationPattern = it)) }
-                )
-            }
 
             OutlinedButton(onClick = { viewModel.testSignal() }, modifier = Modifier.fillMaxWidth()) {
                 Text("TESZT JELZÉS")
@@ -144,9 +126,10 @@ private fun StatusBadge(runState: TimerRunState) {
 }
 
 @Composable
-private fun NextSignalDisplay(remainingMillis: Long?, runState: TimerRunState) {
+private fun NextSignalDisplay(remainingMillis: Long?, runState: TimerRunState, nextTimerIndex: Int) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Következő jelzés", style = MaterialTheme.typography.labelLarge)
+        val timerLabel = if (nextTimerIndex == 0) "Timer 1 – következő jelzés" else "Timer 2 – következő jelzés"
+        Text(timerLabel, style = MaterialTheme.typography.labelLarge)
         Text(
             text = remainingMillis?.let { formatMillis(it) } ?: "--:--",
             style = MaterialTheme.typography.displayLarge
@@ -154,8 +137,55 @@ private fun NextSignalDisplay(remainingMillis: Long?, runState: TimerRunState) {
     }
 }
 
+/** A self-contained section for one timer's full configuration. */
 @Composable
-private fun IntervalPicker(intervalMillis: Long, enabled: Boolean, onIntervalChange: (Long) -> Unit) {
+private fun TimerSection(label: String, config: TimerConfig, isEditable: Boolean, onConfigChange: (TimerConfig) -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+            IntervalPicker(
+                intervalMillis = config.intervalMillis,
+                enabled = isEditable,
+                onIntervalChange = { newMillis ->
+                    onConfigChange(config.copy(intervalMillis = TimerConfig.coerceInterval(newMillis)))
+                }
+            )
+
+            PresetRow(enabled = isEditable) { presetMillis ->
+                onConfigChange(config.copy(intervalMillis = presetMillis))
+            }
+
+            SignalTypeSelector(
+                selected = config.signalType,
+                enabled = isEditable,
+                onSelect = { onConfigChange(config.copy(signalType = it)) }
+            )
+
+            if (config.signalType == SignalType.SOUND_ONLY || config.signalType == SignalType.SOUND_AND_VIBRATION) {
+                SoundPatternSelector(
+                    selected = config.soundPattern,
+                    enabled = isEditable,
+                    onSelect = { onConfigChange(config.copy(soundPattern = it)) }
+                )
+            }
+
+            if (config.signalType == SignalType.VIBRATION_ONLY || config.signalType == SignalType.SOUND_AND_VIBRATION) {
+                VibrationPatternSelector(
+                    selected = config.vibrationPattern,
+                    enabled = isEditable,
+                    onSelect = { onConfigChange(config.copy(vibrationPattern = it)) }
+                )
+            }
+        }
+    }
+}
+
+
     val totalSeconds = intervalMillis / 1000
     var hours by remember(intervalMillis) { mutableStateOf((totalSeconds / 3600).toInt()) }
     var minutes by remember(intervalMillis) { mutableStateOf(((totalSeconds % 3600) / 60).toInt()) }

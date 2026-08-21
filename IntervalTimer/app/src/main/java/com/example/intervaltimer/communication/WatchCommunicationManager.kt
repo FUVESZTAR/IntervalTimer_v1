@@ -50,6 +50,9 @@ object WatchCommunicationManager {
             put("runState", snapshot.runState.name)
             put("intervalMillis", snapshot.config.intervalMillis)
             put("signalType", snapshot.config.signalType.name)
+            put("intervalMillis2", snapshot.config2.intervalMillis)
+            put("signalType2", snapshot.config2.signalType.name)
+            put("nextTimerIndex", snapshot.nextTimerIndex)
             put("remainingMillis", TimerEngine.remainingMillisNow() ?: -1L)
         }.toString().toByteArray()
 

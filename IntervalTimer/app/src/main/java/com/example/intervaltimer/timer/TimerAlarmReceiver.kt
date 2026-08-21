@@ -38,7 +38,8 @@ class TimerAlarmReceiver : BroadcastReceiver() {
         receiverScope.launch {
             try {
                 TimerEngine.hydrateFromPersistence(context.applicationContext)
-                val config = TimerEngine.snapshot.value.config
+                val snapshot = TimerEngine.snapshot.value
+                val config = snapshot.activeConfig
 
                 if (config.phoneEnabled) {
                     when (config.signalType) {

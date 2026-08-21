@@ -31,9 +31,12 @@ class BootReceiver : BroadcastReceiver() {
 
                 if (autoRestore && runtime.runState == TimerRunState.RUNNING) {
                     val config = repo.configFlow.first()
+                    val config2 = repo.config2Flow.first()
                     TimerEngine.restoreAfterBoot(
                         context = context.applicationContext,
                         config = config,
+                        config2 = config2,
+                        nextTimerIndex = runtime.nextTimerIndex,
                         nextTriggerWallClockMillis = runtime.nextTriggerWallClockMillis
                     )
                     ContextCompat.startForegroundService(
