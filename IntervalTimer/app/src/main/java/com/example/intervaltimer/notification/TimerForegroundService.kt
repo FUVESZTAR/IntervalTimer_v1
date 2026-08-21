@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.IBinder
 import com.example.intervaltimer.shared.model.TimerRunState
 import com.example.intervaltimer.timer.TimerEngine
+import kotlinx.coroutines.runBlocking
 
 /**
  * Deliberately minimal. This service does NOT run a countdown loop — its only jobs are:
@@ -20,6 +21,7 @@ class TimerForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        runBlocking { TimerEngine.hydrateFromPersistence(applicationContext) }
         startForeground(NotificationHelper.NOTIFICATION_ID, NotificationHelper.buildOngoingNotification(this))
 
         // If the engine has already moved to STOPPED (e.g. race with a STOP action),

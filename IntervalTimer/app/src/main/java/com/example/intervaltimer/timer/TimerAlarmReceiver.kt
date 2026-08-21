@@ -9,6 +9,7 @@ import com.example.intervaltimer.communication.WatchCommunicationManager
 import com.example.intervaltimer.notification.NotificationHelper
 import com.example.intervaltimer.shared.model.SignalType
 import com.example.intervaltimer.vibration.VibrationPlayer
+import kotlinx.coroutines.runBlocking
 
 /**
  * Receives the AlarmManager broadcast when an interval elapses.
@@ -20,6 +21,8 @@ import com.example.intervaltimer.vibration.VibrationPlayer
 class TimerAlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        runBlocking { TimerEngine.hydrateFromPersistence(context.applicationContext) }
+
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,

@@ -7,13 +7,17 @@ import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
 import com.example.intervaltimer.BuildConfig
+import com.example.intervaltimer.settings.SettingsRepository
 import com.example.intervaltimer.shared.model.TimerConfig
+import com.example.intervaltimer.shared.model.TimerRestoreCalculator
 import com.example.intervaltimer.shared.model.TimerRunState
 import com.example.intervaltimer.shared.model.TimerSnapshot
 import com.example.intervaltimer.shared.model.TimerStateMachine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 /**
  * Core interval-timer engine.
@@ -59,6 +63,69 @@ object TimerEngine {
         log("Timer started. interval=${config.intervalMillis}ms")
     }
 
+    /** Rebuilds the in-memory state after process death, without scheduling a duplicate alarm. */
+    suspend fun hydrateFromPersistence(context: Context) {
+        if (_snapshot.value.runState != TimerRunState.IDLE) return
+
+        val repository = SettingsRepository(context.applicationContext)
+        val config = repository.configFlow.first()
+        val persisted = repository.readPersistedTimerRuntime()
+        when (persisted.runState) {
+            TimerRunState.RUNNING -> {
+                val nextTriggerWallClockMillis = persisted.nextTriggerWallClockMillis
+                if (nextTriggerWallClockMillis == null) {
+                    _snapshot.value = TimerSnapshot(
+                        runState = TimerRunState.STOPPED,
+                        config = config,
+                        nextTriggerElapsedRealtime = null
+                    )
+                } else {
+                    _snapshot.value = TimerSnapshot(
+                        runState = TimerRunState.RUNNING,
+                        config = config,
+                        nextTriggerElapsedRealtime = SystemClock.elapsedRealtime() +
+                            TimerRestoreCalculator.remainingForHydration(
+                                nowWallClockMillis = System.currentTimeMillis(),
+                                nextTriggerWallClockMillis = nextTriggerWallClockMillis
+                            )
+                    )
+                }
+            }
+            TimerRunState.PAUSED -> {
+                _snapshot.value = TimerSnapshot(
+                    runState = TimerRunState.PAUSED,
+                    config = config,
+                    nextTriggerElapsedRealtime = null,
+                    remainingMillisAtPause = persisted.pausedRemainingMillis ?: config.intervalMillis
+                )
+            }
+            TimerRunState.STOPPED -> {
+                _snapshot.value = TimerSnapshot(
+                    runState = TimerRunState.STOPPED,
+                    config = config,
+                    nextTriggerElapsedRealtime = null
+                )
+            }
+            TimerRunState.IDLE -> {
+                _snapshot.value = TimerSnapshot(
+                    runState = TimerRunState.IDLE,
+                    config = config,
+                    nextTriggerElapsedRealtime = null
+                )
+            }
+        }
+    }
+
+    fun restoreAfterBoot(context: Context, config: TimerConfig, nextTriggerWallClockMillis: Long?) {
+        val remainingMillis = TimerRestoreCalculator.remainingForReschedule(
+            nowWallClockMillis = System.currentTimeMillis(),
+            nextTriggerWallClockMillis = nextTriggerWallClockMillis,
+            fallbackIntervalMillis = config.intervalMillis
+        )
+        scheduleNext(context, config, remainingMillis)
+        log("Timer restored after boot. remaining=${remainingMillis}ms")
+    }
+
     /** RUNNING -> PAUSED. Cancels the pending alarm and remembers remaining time. */
     fun pause(context: Context) {
         val current = _snapshot.value
@@ -74,6 +141,7 @@ object TimerEngine {
             nextTriggerElapsedRealtime = null,
             remainingMillisAtPause = remaining
         )
+        persistSnapshot(context)
         log("Timer paused. remaining=${remaining}ms")
     }
 
@@ -85,6 +153,7 @@ object TimerEngine {
             nextTriggerElapsedRealtime = null,
             remainingMillisAtPause = null
         )
+        persistSnapshot(context)
         log("Timer stopped")
     }
 
@@ -121,6 +190,7 @@ object TimerEngine {
             nextTriggerElapsedRealtime = triggerAt,
             remainingMillisAtPause = null
         )
+        persistSnapshot(context)
     }
 
     private fun cancelAlarm(context: Context) {
@@ -146,5 +216,11 @@ object TimerEngine {
 
     private fun log(message: String) {
         if (BuildConfig.VERBOSE_LOGGING) Log.d(TAG, message)
+    }
+
+    private fun persistSnapshot(context: Context) {
+        runBlocking {
+            SettingsRepository(context.applicationContext).persistSnapshot(_snapshot.value)
+        }
     }
 }

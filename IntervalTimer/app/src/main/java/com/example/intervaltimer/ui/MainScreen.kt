@@ -2,6 +2,7 @@ package com.example.intervaltimer.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
@@ -227,7 +228,10 @@ private fun PresetRow(enabled: Boolean, onSelect: (Long) -> Unit) {
 private fun FlowRowLike(content: @Composable () -> Unit) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth().horizontalScrollFade(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .horizontalScrollFade(),
     ) { content() }
 }
 

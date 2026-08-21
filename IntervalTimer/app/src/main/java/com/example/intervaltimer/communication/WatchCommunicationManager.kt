@@ -1,14 +1,18 @@
 package com.example.intervaltimer.communication
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import com.example.intervaltimer.BuildConfig
 import com.example.intervaltimer.shared.communication.WearMessagePaths
 import com.example.intervaltimer.shared.model.TimerRunState
+import com.example.intervaltimer.notification.NotificationHelper
+import com.example.intervaltimer.notification.TimerForegroundService
 import com.example.intervaltimer.timer.TimerEngine
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 
 /**
@@ -72,10 +76,13 @@ object WatchCommunicationManager {
      */
     class ListenerService : WearableListenerService() {
         override fun onMessageReceived(event: MessageEvent) {
+            runBlocking { TimerEngine.hydrateFromPersistence(applicationContext) }
+
             when (event.path) {
                 WearMessagePaths.REQUEST_STOP -> {
                     TimerEngine.stop(applicationContext)
-                    com.example.intervaltimer.notification.NotificationHelper.cancel(applicationContext)
+                    NotificationHelper.cancel(applicationContext)
+                    stopService(Intent(applicationContext, TimerForegroundService::class.java))
                 }
                 WearMessagePaths.REQUEST_PAUSE_RESUME -> {
                     if (TimerEngine.currentState() == TimerRunState.RUNNING) {
@@ -83,7 +90,7 @@ object WatchCommunicationManager {
                     } else {
                         TimerEngine.start(applicationContext, TimerEngine.snapshot.value.config)
                     }
-                    com.example.intervaltimer.notification.NotificationHelper.updateOngoingNotification(applicationContext)
+                    NotificationHelper.updateOngoingNotification(applicationContext)
                 }
                 WearMessagePaths.HELLO -> sendStateSync(applicationContext)
             }

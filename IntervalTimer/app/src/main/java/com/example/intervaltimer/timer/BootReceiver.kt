@@ -26,17 +26,21 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 val repo = SettingsRepository(context.applicationContext)
                 val autoRestore = repo.autoRestoreOnBootFlow.first()
-                val wasRunning = repo.wasRunningBeforeShutdown()
+                val runtime = repo.readPersistedTimerRuntime()
 
-                if (autoRestore && wasRunning) {
+                if (autoRestore && runtime.runState == com.example.intervaltimer.shared.model.TimerRunState.RUNNING) {
                     val config = repo.configFlow.first()
-                    TimerEngine.start(context.applicationContext, config)
+                    TimerEngine.restoreAfterBoot(
+                        context = context.applicationContext,
+                        config = config,
+                        nextTriggerWallClockMillis = runtime.nextTriggerWallClockMillis
+                    )
                     ContextCompat.startForegroundService(
                         context.applicationContext,
                         Intent(context.applicationContext, TimerForegroundService::class.java)
                     )
-                } else {
-                    repo.persistRunningState(isRunning = false, nextTriggerWallClockMillis = null)
+                } else if (runtime.runState == com.example.intervaltimer.shared.model.TimerRunState.RUNNING) {
+                    TimerEngine.stop(context.applicationContext)
                 }
             } finally {
                 pendingResult.finish()
