@@ -45,6 +45,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        viewModelScope.launch {
+            TimerEngine.hydrateFromPersistence(application)
+        }
         // Load persisted config once on start.
         viewModelScope.launch {
             val savedConfig = settingsRepository.configFlow
@@ -68,7 +71,6 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         TimerEngine.start(app, uiState.value.config)
         ContextCompat.startForegroundService(app, Intent(app, TimerForegroundService::class.java))
         NotificationHelper.updateOngoingNotification(app)
-        persistRunning(true)
         WatchCommunicationManager.sendStateSync(app)
     }
 
@@ -84,7 +86,6 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         TimerEngine.stop(app)
         NotificationHelper.cancel(app)
         app.stopService(Intent(app, TimerForegroundService::class.java))
-        persistRunning(false)
         WatchCommunicationManager.sendStateSync(app)
     }
 
@@ -109,11 +110,5 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         }
         // Test signal never touches the timer state and is not sent to the watch,
         // per spec §4 ("ez ne indítsa el az időzítőt").
-    }
-
-    private fun persistRunning(running: Boolean) {
-        viewModelScope.launch {
-            settingsRepository.persistRunningState(running, TimerEngine.snapshot.value.nextTriggerElapsedRealtime)
-        }
     }
 }

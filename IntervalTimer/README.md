@@ -99,19 +99,19 @@ Előfeltétel: Android Studio (Ladybug vagy újabb), JDK 17.
 ```bash
 git clone <repo>
 cd IntervalTimer
-./gradlew :app:assembleDebug
-./gradlew :wear:assembleDebug
+gradle :app:assembleDebug
+gradle :wear:assembleDebug
 ```
 
-> Ebben a fejlesztői környezetben (ahol a projekt generálva lett) nincs Android SDK és
-> nincs hálózati hozzáférés, ezért a Gradle build itt nem futtatható le — a forráskódot
-> Android Studio-ban kell megnyitni és build/sync-elni.
+> A repository jelenleg nem tartalmaz Gradle wrapper fájlokat, ezért CLI-ből a lokálisan
+> telepített `gradle` parancsot kell használni, vagy Android Studio-ból kell megnyitni a
+> projektet.
 
 Release build:
 
 ```bash
-./gradlew :app:assembleRelease
-./gradlew :wear:assembleRelease
+gradle :app:assembleRelease
+gradle :wear:assembleRelease
 ```
 
 A release build nem tartalmaz verbose logolást (`BuildConfig.VERBOSE_LOGGING = false`).
@@ -143,7 +143,10 @@ Az óra alkalmazás ezután a telefon jelenléte nélkül is megnyitható és ha
 - [ ] Doze mód (hosszabb állás, kijelző ki, töltőn kívül) – `setExactAndAllowWhileIdle`
       miatt a jelzés Doze alatt is időben megtörténik
 - [ ] Reboot – ha az "Automatikus indulás" be van kapcsolva Settingsben, az időzítő
-      folytatódik; egyébként IDLE állapotban indul az app
+      a korábban hátralévő időből folytatódik; ha a jelzésnek boot közben már meg kellett
+      volna történnie, az app a rendszer felállása után 1 másodpercen belül újraütemezi.
+      Ha az automatikus indulás ki van kapcsolva, a korábban futó időzítés STOPPED állapotba
+      kerül reboot után
 
 ## Tesztelési útmutató – Galaxy Watch5
 

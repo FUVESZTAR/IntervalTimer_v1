@@ -5,6 +5,11 @@ import android.content.Intent
 import android.os.IBinder
 import com.example.intervaltimer.shared.model.TimerRunState
 import com.example.intervaltimer.timer.TimerEngine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Deliberately minimal. This service does NOT run a countdown loop — its only jobs are:
@@ -17,10 +22,16 @@ import com.example.intervaltimer.timer.TimerEngine
  */
 class TimerForegroundService : Service() {
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NotificationHelper.NOTIFICATION_ID, NotificationHelper.buildOngoingNotification(this))
+        serviceScope.launch {
+            TimerEngine.hydrateFromPersistence(applicationContext)
+            NotificationHelper.updateOngoingNotification(applicationContext)
+        }
 
         // If the engine has already moved to STOPPED (e.g. race with a STOP action),
         // there's nothing left for this service to do.
@@ -40,6 +51,7 @@ class TimerForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         super.onDestroy()
     }
 }
