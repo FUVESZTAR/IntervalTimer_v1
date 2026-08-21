@@ -13,11 +13,16 @@ import com.example.intervaltimer.shared.model.TimerRestoreCalculator
 import com.example.intervaltimer.shared.model.TimerRunState
 import com.example.intervaltimer.shared.model.TimerSnapshot
 import com.example.intervaltimer.shared.model.TimerStateMachine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Core interval-timer engine.
@@ -40,6 +45,9 @@ object TimerEngine {
 
     private const val TAG = "TimerEngine"
     private const val REQUEST_CODE_ALARM = 1001
+    private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val hydrationMutex = Mutex()
+    @Volatile private var settingsRepository: SettingsRepository? = null
 
     private val _snapshot = MutableStateFlow(
         TimerSnapshot(runState = TimerRunState.IDLE, config = TimerConfig.DEFAULT, nextTriggerElapsedRealtime = null)
@@ -65,53 +73,55 @@ object TimerEngine {
 
     /** Rebuilds the in-memory state after process death, without scheduling a duplicate alarm. */
     suspend fun hydrateFromPersistence(context: Context) {
-        if (_snapshot.value.runState != TimerRunState.IDLE) return
+        hydrationMutex.withLock {
+            if (_snapshot.value.runState != TimerRunState.IDLE) return@withLock
 
-        val repository = SettingsRepository(context.applicationContext)
-        val config = repository.configFlow.first()
-        val persisted = repository.readPersistedTimerRuntime()
-        when (persisted.runState) {
-            TimerRunState.RUNNING -> {
-                val nextTriggerWallClockMillis = persisted.nextTriggerWallClockMillis
-                if (nextTriggerWallClockMillis == null) {
+            val repository = repository(context)
+            val config = repository.configFlow.first()
+            val persisted = repository.readPersistedTimerRuntime()
+            when (persisted.runState) {
+                TimerRunState.RUNNING -> {
+                    val nextTriggerWallClockMillis = persisted.nextTriggerWallClockMillis
+                    if (nextTriggerWallClockMillis == null) {
+                        _snapshot.value = TimerSnapshot(
+                            runState = TimerRunState.STOPPED,
+                            config = config,
+                            nextTriggerElapsedRealtime = null
+                        )
+                    } else {
+                        _snapshot.value = TimerSnapshot(
+                            runState = TimerRunState.RUNNING,
+                            config = config,
+                            nextTriggerElapsedRealtime = SystemClock.elapsedRealtime() +
+                                TimerRestoreCalculator.remainingForHydration(
+                                    nowWallClockMillis = System.currentTimeMillis(),
+                                    nextTriggerWallClockMillis = nextTriggerWallClockMillis
+                                )
+                        )
+                    }
+                }
+                TimerRunState.PAUSED -> {
+                    _snapshot.value = TimerSnapshot(
+                        runState = TimerRunState.PAUSED,
+                        config = config,
+                        nextTriggerElapsedRealtime = null,
+                        remainingMillisAtPause = persisted.pausedRemainingMillis ?: config.intervalMillis
+                    )
+                }
+                TimerRunState.STOPPED -> {
                     _snapshot.value = TimerSnapshot(
                         runState = TimerRunState.STOPPED,
                         config = config,
                         nextTriggerElapsedRealtime = null
                     )
-                } else {
+                }
+                TimerRunState.IDLE -> {
                     _snapshot.value = TimerSnapshot(
-                        runState = TimerRunState.RUNNING,
+                        runState = TimerRunState.IDLE,
                         config = config,
-                        nextTriggerElapsedRealtime = SystemClock.elapsedRealtime() +
-                            TimerRestoreCalculator.remainingForHydration(
-                                nowWallClockMillis = System.currentTimeMillis(),
-                                nextTriggerWallClockMillis = nextTriggerWallClockMillis
-                            )
+                        nextTriggerElapsedRealtime = null
                     )
                 }
-            }
-            TimerRunState.PAUSED -> {
-                _snapshot.value = TimerSnapshot(
-                    runState = TimerRunState.PAUSED,
-                    config = config,
-                    nextTriggerElapsedRealtime = null,
-                    remainingMillisAtPause = persisted.pausedRemainingMillis ?: config.intervalMillis
-                )
-            }
-            TimerRunState.STOPPED -> {
-                _snapshot.value = TimerSnapshot(
-                    runState = TimerRunState.STOPPED,
-                    config = config,
-                    nextTriggerElapsedRealtime = null
-                )
-            }
-            TimerRunState.IDLE -> {
-                _snapshot.value = TimerSnapshot(
-                    runState = TimerRunState.IDLE,
-                    config = config,
-                    nextTriggerElapsedRealtime = null
-                )
             }
         }
     }
@@ -219,8 +229,17 @@ object TimerEngine {
     }
 
     private fun persistSnapshot(context: Context) {
-        runBlocking {
-            SettingsRepository(context.applicationContext).persistSnapshot(_snapshot.value)
+        persistenceScope.launch {
+            repository(context).persistSnapshot(_snapshot.value)
+        }
+    }
+
+    private fun repository(context: Context): SettingsRepository {
+        settingsRepository?.let { return it }
+        return synchronized(this) {
+            settingsRepository ?: SettingsRepository(context.applicationContext).also {
+                settingsRepository = it
+            }
         }
     }
 }

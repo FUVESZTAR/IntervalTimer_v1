@@ -1,6 +1,6 @@
 # IntervalTimer_v1
 
-The Android project lives in `/home/runner/work/IntervalTimer_v1/IntervalTimer_v1/IntervalTimer`.
+The Android project lives in `IntervalTimer/`.
 
 ## Modules
 
@@ -13,7 +13,7 @@ The Android project lives in `/home/runner/work/IntervalTimer_v1/IntervalTimer_v
 From the repository root:
 
 ```bash
-cd /home/runner/work/IntervalTimer_v1/IntervalTimer_v1/IntervalTimer
+cd IntervalTimer
 gradle :shared:test
 gradle :app:assembleDebug
 gradle :wear:assembleDebug

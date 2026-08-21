@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.example.intervaltimer.notification.TimerForegroundService
 import com.example.intervaltimer.settings.SettingsRepository
+import com.example.intervaltimer.shared.model.TimerRunState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -28,7 +29,7 @@ class BootReceiver : BroadcastReceiver() {
                 val autoRestore = repo.autoRestoreOnBootFlow.first()
                 val runtime = repo.readPersistedTimerRuntime()
 
-                if (autoRestore && runtime.runState == com.example.intervaltimer.shared.model.TimerRunState.RUNNING) {
+                if (autoRestore && runtime.runState == TimerRunState.RUNNING) {
                     val config = repo.configFlow.first()
                     TimerEngine.restoreAfterBoot(
                         context = context.applicationContext,
@@ -39,7 +40,7 @@ class BootReceiver : BroadcastReceiver() {
                         context.applicationContext,
                         Intent(context.applicationContext, TimerForegroundService::class.java)
                     )
-                } else if (runtime.runState == com.example.intervaltimer.shared.model.TimerRunState.RUNNING) {
+                } else if (runtime.runState == TimerRunState.RUNNING) {
                     TimerEngine.stop(context.applicationContext)
                 }
             } finally {

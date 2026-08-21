@@ -4,15 +4,19 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.example.intervaltimer.BuildConfig
-import com.example.intervaltimer.shared.communication.WearMessagePaths
-import com.example.intervaltimer.shared.model.TimerRunState
 import com.example.intervaltimer.notification.NotificationHelper
 import com.example.intervaltimer.notification.TimerForegroundService
+import com.example.intervaltimer.shared.communication.WearMessagePaths
+import com.example.intervaltimer.shared.model.TimerRunState
 import com.example.intervaltimer.timer.TimerEngine
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
@@ -75,25 +79,34 @@ object WatchCommunicationManager {
      * Registered in the manifest as a WearableListenerService.
      */
     class ListenerService : WearableListenerService() {
-        override fun onMessageReceived(event: MessageEvent) {
-            runBlocking { TimerEngine.hydrateFromPersistence(applicationContext) }
+        private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-            when (event.path) {
-                WearMessagePaths.REQUEST_STOP -> {
-                    TimerEngine.stop(applicationContext)
-                    NotificationHelper.cancel(applicationContext)
-                    stopService(Intent(applicationContext, TimerForegroundService::class.java))
-                }
-                WearMessagePaths.REQUEST_PAUSE_RESUME -> {
-                    if (TimerEngine.currentState() == TimerRunState.RUNNING) {
-                        TimerEngine.pause(applicationContext)
-                    } else {
-                        TimerEngine.start(applicationContext, TimerEngine.snapshot.value.config)
+        override fun onMessageReceived(event: MessageEvent) {
+            serviceScope.launch {
+                TimerEngine.hydrateFromPersistence(applicationContext)
+
+                when (event.path) {
+                    WearMessagePaths.REQUEST_STOP -> {
+                        TimerEngine.stop(applicationContext)
+                        NotificationHelper.cancel(applicationContext)
+                        stopService(Intent(applicationContext, TimerForegroundService::class.java))
                     }
-                    NotificationHelper.updateOngoingNotification(applicationContext)
+                    WearMessagePaths.REQUEST_PAUSE_RESUME -> {
+                        if (TimerEngine.currentState() == TimerRunState.RUNNING) {
+                            TimerEngine.pause(applicationContext)
+                        } else {
+                            TimerEngine.start(applicationContext, TimerEngine.snapshot.value.config)
+                        }
+                        NotificationHelper.updateOngoingNotification(applicationContext)
+                    }
+                    WearMessagePaths.HELLO -> sendStateSync(applicationContext)
                 }
-                WearMessagePaths.HELLO -> sendStateSync(applicationContext)
             }
+        }
+
+        override fun onDestroy() {
+            serviceScope.cancel()
+            super.onDestroy()
         }
     }
 }

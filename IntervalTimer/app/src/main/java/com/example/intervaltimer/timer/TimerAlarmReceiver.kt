@@ -9,7 +9,11 @@ import com.example.intervaltimer.communication.WatchCommunicationManager
 import com.example.intervaltimer.notification.NotificationHelper
 import com.example.intervaltimer.shared.model.SignalType
 import com.example.intervaltimer.vibration.VibrationPlayer
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Receives the AlarmManager broadcast when an interval elapses.
@@ -21,7 +25,7 @@ import kotlinx.coroutines.runBlocking
 class TimerAlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        runBlocking { TimerEngine.hydrateFromPersistence(context.applicationContext) }
+        val pendingResult = goAsync()
 
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = powerManager.newWakeLock(
@@ -30,32 +34,38 @@ class TimerAlarmReceiver : BroadcastReceiver() {
         )
         wakeLock.acquire(5_000L) // safety timeout; released explicitly below anyway
 
-        try {
-            val config = TimerEngine.snapshot.value.config
+        val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        receiverScope.launch {
+            try {
+                TimerEngine.hydrateFromPersistence(context.applicationContext)
+                val config = TimerEngine.snapshot.value.config
 
-            if (config.phoneEnabled) {
-                when (config.signalType) {
-                    SignalType.SOUND_ONLY -> SoundPlayer.play(context, config.soundPattern)
-                    SignalType.VIBRATION_ONLY -> VibrationPlayer.play(context, config.vibrationPattern)
-                    SignalType.SOUND_AND_VIBRATION -> {
-                        SoundPlayer.play(context, config.soundPattern)
-                        VibrationPlayer.play(context, config.vibrationPattern)
+                if (config.phoneEnabled) {
+                    when (config.signalType) {
+                        SignalType.SOUND_ONLY -> SoundPlayer.play(context, config.soundPattern)
+                        SignalType.VIBRATION_ONLY -> VibrationPlayer.play(context, config.vibrationPattern)
+                        SignalType.SOUND_AND_VIBRATION -> {
+                            SoundPlayer.play(context, config.soundPattern)
+                            VibrationPlayer.play(context, config.vibrationPattern)
+                        }
+                        SignalType.SILENT -> Unit
                     }
-                    SignalType.SILENT -> Unit
                 }
-            }
 
-            if (config.watchEnabled) {
-                // Fire-and-forget; if the watch is unreachable this silently no-ops
-                // (see WatchCommunicationManager) and the phone timer is unaffected.
-                WatchCommunicationManager.sendSignalFired(context)
-            }
+                if (config.watchEnabled) {
+                    // Fire-and-forget; if the watch is unreachable this silently no-ops
+                    // (see WatchCommunicationManager) and the phone timer is unaffected.
+                    WatchCommunicationManager.sendSignalFired(context)
+                }
 
-            // Reschedule immediately so the next alarm is set before this receiver returns.
-            TimerEngine.onSignalFired(context)
-            NotificationHelper.updateOngoingNotification(context)
-        } finally {
-            if (wakeLock.isHeld) wakeLock.release()
+                // Reschedule immediately so the next alarm is set before this receiver returns.
+                TimerEngine.onSignalFired(context)
+                NotificationHelper.updateOngoingNotification(context)
+            } finally {
+                receiverScope.cancel()
+                if (wakeLock.isHeld) wakeLock.release()
+                pendingResult.finish()
+            }
         }
     }
 }
