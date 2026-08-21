@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Vibration signal -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Required Android 13+ to post the "timer active" notification -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Keep the timer alive while the app UI is closed / screen is off -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!--
+      Exact alarms are the core requirement here (user expects a signal at a precise
+      moment, not "sometime in the next 15 minutes" like WorkManager would give us).
+      USE_EXACT_ALARM (Android 13+) is used instead of SCHEDULE_EXACT_ALARM because
+      this app's core function IS timing/alarms — Play Store policy allows the
+      non-runtime-permission USE_EXACT_ALARM for apps whose core purpose is alarms/timers,
+      avoiding an intrusive "alarms & reminders" settings toggle for the user.
+    -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- Restore an active timer after the phone reboots (only if one was running) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Only used transiently while actually playing a signal; no continuous wake lock -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- NOTE: no INTERNET, no ACCESS_FINE_LOCATION, no BLUETOOTH_* — Play Services'
+         Wearable API handles the phone<->watch channel without the app needing
+         raw Bluetooth permissions itself. -->
+
+    <application
+        android:name=".IntervalTimerApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.IntervalTimer"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Fires when AlarmManager wakes the device for the next scheduled signal -->
+        <receiver
+            android:name=".timer.TimerAlarmReceiver"
+            android:exported="false" />
+
+        <!-- Restores a running timer after reboot, only if one was active -->
+        <receiver
+            android:name=".timer.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Handles STOP / PAUSE taps from the persistent notification -->
+        <receiver
+            android:name=".notification.NotificationActionReceiver"
+            android:exported="false" />
+
+        <!--
+          Minimal foreground service: keeps the process alive and shows the
+          ongoing "Interval Timer – Aktív" notification. It performs no polling —
+          it is woken only by the alarms scheduled through TimerEngine.
+          foregroundServiceType="specialUse" required from Android 14 (API 34).
+        -->
+        <service
+            android:name=".notification.TimerForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Reliable interval signal timer that must survive Doze/App Standby" />
+        </service>
+
+        <!-- Receives PAUSE/STOP requests forwarded from the watch -->
+        <service
+            android:name=".communication.WatchCommunicationManager$ListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>
